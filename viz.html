@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+body {
+  margin-left: 40px;
+  font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+
+}
+
+h1, h3 {
+  margin-bottom: -10px;
+}
+/* svg {
+    border: 1px solid #ccc;
+    background-color: #f9f9f9;
+} */
+.feature {
+    fill: #69b3a2;
+    stroke: #ffffff;
+    stroke-width: 1px;
+}
+.feature:hover {
+    fill: #408070;
+}
+
+/* Color scale */
+.q-none { fill: rgb(241, 241, 234); }
+.q0-10  { fill: rgb(250, 242, 179); }
+.q1-10  { fill: rgb(250, 236, 127); }
+.q2-10  { fill: rgb(255, 204, 0); }
+.q3-10  { fill: rgb(248, 174, 1); }
+.q4-10  { fill: rgb(255, 154, 2); }
+.q5-10  { fill: rgb(221, 77, 0); }
+.q6-10  { fill: rgb(216, 17, 17); }
+.q7-10  { fill: rgb(165, 3, 3); }
+.q8-10  { fill: rgb(121, 0, 0); }
+.q9-10  { fill: rgb(86, 0, 0); }
+</style>
+</head>
+<body>
+
+<h1></h1><br>
+<h3></h3><br>
+
+<div class="main-container">
+    <svg id="map" width="800" height="500"></svg>
+
+    <div class="controls" style="margin-bottom: 12px;">
+    <label for="monthDropdown"><strong>Select Month:</strong></label>
+    <select id="monthDropdown"></select>
+</div>
+</div>
+
+<script src="js/d3.v7.min.js"></script>
+<script src="js/topojson.v1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+<script>
+var rateById = new Map();
+
+d3.select("h1").text("NYC trash 🐀");
+
+const width = 800;
+const height = 500;
+
+const svg = d3.select("#map")
+    .attr("width", width)
+    .attr("height", height);
+
+const quantize = d3.scaleQuantize()
+    .domain([0, 1])
+    .range(d3.range(10).map(i => "q" + i + "-10"));
+
+// Load GeoJSON (and CSV if it exists)
+let ratesByMonth = new Map(); // Structure: Map<Month, Map<BoroCD, TrashRate>>
+
+Promise.all([
+    d3.json("js/nyc.geojson"),
+    d3.csv("data.csv")
+]).then(function([nyc, data]) {
+    // 1. Nested rollup: First by Month, then by 3-digit BoroCD
+    ratesByMonth = d3.rollup(
+        data,
+        rows => {
+            const trash = d3.sum(rows, r => +r.REFUSETONSCOLLECTED || 0);
+            const paper = d3.sum(rows, r => +r.PAPERTONSCOLLECTED || 0);
+            const mgp   = d3.sum(rows, r => +r.MGPTONSCOLLECTED || 0);
+            const total = trash + paper + mgp;
+            return total > 0 ? trash / total : NaN;
+        },
+        r => String(r.MONTH).trim(), // Outer key: Month
+        r => String(r.BOROUGH_ID).trim() + String(r.COMMUNITYDISTRICT).trim().padStart(2, "0") // Inner key: BoroCD
+    );
+
+    // 2. Populate the month dropdown sorted chronologically
+    const months = Array.from(ratesByMonth.keys()).sort();
+    const dropdown = d3.select("#monthDropdown");
+
+    dropdown.selectAll("option")
+        .data(months)
+        .join("option")
+        .attr("value", d => d)
+        .text(d => d);
+
+    // 3. Draw the initial map using the first (or latest) month
+    const initialMonth = months[months.length - 1]; // Defaults to most recent month
+    dropdown.property("value", initialMonth);
+    ready(nyc, initialMonth);
+
+    // 4. Re-color the map whenever the user picks a new month
+    dropdown.on("change", function() {
+        updateMap(this.value);
+    });
+
+    console.log("CSV columns:", Object.keys(data[0]));
+    console.log("First CSV row:", data[0]);
+    console.log("First GeoJSON feature properties:", nyc.features[0].properties);
+    console.log("Rolled-up months:", Array.from(ratesByMonth.keys()));
+    console.log
+}).catch(function(error) {
+    console.error("Error loading files:", error);
+});
+
+function ready(geoData, initialMonth) {
+    if (!geoData || !geoData.features) {
+        console.error("Invalid GeoJSON data:", geoData);
+        return;
+    }
+
+    geoData = turf.rewind(geoData, { reverse: true });
+
+    const projection = d3.geoMercator()
+        .fitSize([width, height], geoData);
+
+    const pathGenerator = d3.geoPath().projection(projection);
+
+    // Draw the district paths once
+    svg.selectAll("path")
+        .data(geoData.features)
+        .join("path")
+        .attr("class", "feature q-none")
+        .attr("d", pathGenerator);
+
+    // Apply colors for the starting month
+    updateMap(initialMonth);
+}
+
+function updateMap(selectedMonth) {
+    // Get the inner Map<BoroCD, TrashRate> for the chosen month
+    const monthRates = ratesByMonth.get(selectedMonth) || new Map();
+
+    d3.select("h3").text(`Showing: ${selectedMonth}`);
+
+    svg.selectAll("path")
+        .attr("class", function(d) {
+            const props = d.properties || {};
+            const cd = String(props.BoroCD ?? props.boro_cd ?? props.borocd ?? "").trim();
+            const val = monthRates.get(cd);
+
+            const colorClass = (val === undefined || isNaN(val)) ? "q-none" : quantize(val);
+            return "feature " + colorClass;
+        });
+}
+</script>
+</body>
+</html>
