@@ -16,40 +16,89 @@ h1, h3 {
     border: 1px solid #ccc;
     background-color: #f9f9f9;
 } */
+
 .feature {
-    fill: #69b3a2;
     stroke: #ffffff;
     stroke-width: 1px;
-}
-.feature:hover {
-    fill: #408070;
+    cursor: pointer;
 }
 
-/* Color scale */
+/* Only highlight districts that have data */
+.feature:not(.q-none):hover {
+    fill: #408070; /* Or use filter: brightness(0.85); to darken the district's actual color */
+}
+
+/* Ignore mouse hover/clicks completely on no-data districts */
+.q-none {
+    fill: rgb(241, 241, 234);
+    pointer-events: none;
+    cursor: default;
+}
+
+/* Trash Color scale */
 .q-none { fill: rgb(241, 241, 234); }
-.q0-10  { fill: rgb(250, 242, 179); }
-.q1-10  { fill: rgb(250, 236, 127); }
-.q2-10  { fill: rgb(255, 204, 0); }
-.q3-10  { fill: rgb(248, 174, 1); }
-.q4-10  { fill: rgb(255, 154, 2); }
-.q5-10  { fill: rgb(221, 77, 0); }
-.q6-10  { fill: rgb(216, 17, 17); }
-.q7-10  { fill: rgb(165, 3, 3); }
-.q8-10  { fill: rgb(121, 0, 0); }
-.q9-10  { fill: rgb(86, 0, 0); }
+.trash-q-50  { fill: rgb(251, 231, 211); }
+.trash-q0-10  { fill: rgb(251, 221, 190); }
+.trash-q1-10  { fill: rgb(250, 197, 144); }
+.trash-q2-10  { fill: rgb(240, 174, 107); }
+.trash-q3-10  { fill: rgb(212, 145, 78); }
+.trash-q4-10  { fill: rgb(201, 132, 62); }
+.trash-q5-10  { fill: rgb(191, 107, 23); }
+.trash-q6-10  { fill: rgb(174, 87, 0); }
+.trash-q7-10  { fill: rgb(119, 59, 0); }
+.trash-q8-10  { fill: rgb(89, 45, 0); }
+.trash-q9-10  { fill: rgb(54, 27, 0); }
+
+/* Recycle Color scale */
+.recycle-q0-10  { fill: rgb(223, 238, 255); }
+.recycle-q1-10  { fill: rgb(180, 215, 255); }
+.recycle-q2-10  { fill: rgb(145, 197, 255); }
+.recycle-q3-10  { fill: rgb(128, 187, 255); }
+.recycle-q4-10  { fill: rgb(109, 177, 255); }
+.recycle-q5-10  { fill: rgb(56, 146, 248); }
+.recycle-q6-10  { fill: rgb(17, 112, 221); }
+.recycle-q7-10  { fill: rgb(12, 100, 202); }
+.recycle-q8-10  { fill: rgb(1, 73, 155); }
+.recycle-q9-10  { fill: rgb(2, 65, 138); }
+.recycle-q-50  { fill: rgb(0, 44, 94); }
+
+/* Compost Color scale */
+.compost-q0-10  { fill: rgb(224, 255, 209); }
+.compost-q1-10  { fill: rgb(208, 255, 184); }
+.compost-q2-10  { fill: rgb(190, 255, 158); }
+.compost-q3-10  { fill: rgb(154, 233, 114); }
+.compost-q4-10  { fill: rgb(125, 212, 81); }
+.compost-q5-10  { fill: rgb(112, 202, 68); }
+.compost-q6-10  { fill: rgb(95, 187, 49); }
+.compost-q7-10  { fill: rgb(83, 179, 34); }
+.compost-q8-10  { fill: rgb(60, 150, 15); }
+.compost-q9-10  { fill: rgb(41, 123, 0); }
+.compost-q-50  { fill: rgb(23, 70, 0); }
 </style>
 </head>
 <body>
 
 <h1></h1><br>
+<div class="display">
+    <select id="trashDropdown">
+        <option value="trash">Trash</option>
+        <option value="recycle">Recycle</option>
+        <option value="compost">Compost</option>
+    </select>
+</div>
 <h3></h3><br>
 
 <div class="main-container">
+    
+
     <svg id="map" width="800" height="500"></svg>
 
-    <div class="controls" style="margin-bottom: 12px;">
-    <label for="monthDropdown"><strong>Select Month:</strong></label>
-    <select id="monthDropdown"></select>
+    <div class="controls" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+    <label for="monthSlider"><strong>1991</strong></label>
+    <input type="range" id="monthSlider" min="0" max="0" step="1" value="0" style="width: 600px; cursor: pointer;">
+    <span id="monthLabel" style="font-weight: bold; min-width: 90px;"></span>
+    <!-- <label for="monthSlider"><strong>2026</strong></label> -->
+</div>
 </div>
 </div>
 
@@ -69,12 +118,23 @@ const svg = d3.select("#map")
     .attr("width", width)
     .attr("height", height);
 
-const quantize = d3.scaleQuantize()
-    .domain([0, 1])
-    .range(d3.range(10).map(i => "q" + i + "-10"));
+const trash_quantize = d3.scaleQuantize()
+    .domain([0.5, 1])
+    .range(d3.range(10).map(i => "trash" + "-q" + i + "-10"));
+
+const recycle_quantize = d3.scaleQuantize()
+    .domain([0, 0.5])
+    .range(d3.range(10).map(i => "recycle" + "-q" + i + "-10"));    
+
+const compost_quantize = d3.scaleQuantize()
+    .domain([0, 0.2])
+    .range(d3.range(10).map(i => "compost" + "-q" + i + "-10"));
+
 
 // Load GeoJSON (and CSV if it exists)
 let ratesByMonth = new Map(); // Structure: Map<Month, Map<BoroCD, TrashRate>>
+
+
 
 Promise.all([
     d3.json("js/nyc.geojson"),
@@ -87,31 +147,32 @@ Promise.all([
             const trash = d3.sum(rows, r => +r.REFUSETONSCOLLECTED || 0);
             const paper = d3.sum(rows, r => +r.PAPERTONSCOLLECTED || 0);
             const mgp   = d3.sum(rows, r => +r.MGPTONSCOLLECTED || 0);
-            const total = trash + paper + mgp;
-            return total > 0 ? trash / total : NaN;
+            const org = d3.sum(rows, r => +r.RESORGANICSTONS || 0);
+            const xmas = d3.sum(rows, r => +r.XMASTREETONS || 0);
+            const total = trash + paper + mgp + xmas;
+            return [trash/total, (paper+mgp)/total, org/total, xmas/total];
         },
         r => String(r.MONTH).trim(), // Outer key: Month
         r => String(r.BOROUGH_ID).trim() + String(r.COMMUNITYDISTRICT).trim().padStart(2, "0") // Inner key: BoroCD
     );
 
-    // 2. Populate the month dropdown sorted chronologically
     const months = Array.from(ratesByMonth.keys()).sort();
-    const dropdown = d3.select("#monthDropdown");
+    const lastIndex = months.length - 1;
 
-    dropdown.selectAll("option")
-        .data(months)
-        .join("option")
-        .attr("value", d => d)
-        .text(d => d);
+    const slider = d3.select("#monthSlider")
+    .attr("min", 0)
+    .attr("max", lastIndex)
+    .attr("value", lastIndex); // Start at the most recent month
 
-    // 3. Draw the initial map using the first (or latest) month
-    const initialMonth = months[months.length - 1]; // Defaults to most recent month
-    dropdown.property("value", initialMonth);
-    ready(nyc, initialMonth);
 
-    // 4. Re-color the map whenever the user picks a new month
-    dropdown.on("change", function() {
-        updateMap(this.value);
+    // Draw initial map
+    ready(nyc, months[lastIndex]);
+
+    // Update live as the user drags the scrollbar/slider
+    slider.on("input", function() {
+        const selectedMonth = months[+this.value];
+        const trashType = d3.select("#trashDropdown").property("value");
+        updateMap(selectedMonth, trashType);
     });
 
     console.log("CSV columns:", Object.keys(data[0]));
@@ -119,6 +180,8 @@ Promise.all([
     console.log("First GeoJSON feature properties:", nyc.features[0].properties);
     console.log("Rolled-up months:", Array.from(ratesByMonth.keys()));
     console.log
+
+    
 }).catch(function(error) {
     console.error("Error loading files:", error);
 });
@@ -144,25 +207,150 @@ function ready(geoData, initialMonth) {
         .attr("d", pathGenerator);
 
     // Apply colors for the starting month
-    updateMap(initialMonth);
+    updateMap(initialMonth, "trash");
+    updateLegend("trash");
+
+    // trash dropdown listener
+    d3.select("#trashDropdown").on("change", function() {
+        const trashType = this.value;
+        const currentIndex = +d3.select("#monthSlider").property("value");
+        const currentMonth = Array.from(ratesByMonth.keys()).sort()[currentIndex];
+
+        updateMap(currentMonth, trashType);
+        updateLegend(trashType);
+    });
+
+    
 }
 
-function updateMap(selectedMonth) {
-    // Get the inner Map<BoroCD, TrashRate> for the chosen month
-    const monthRates = ratesByMonth.get(selectedMonth) || new Map();
+function getGeoJsonBoroCd(feature) {
+    const p = feature.properties || {};
+    const raw = p.BoroCD ?? p.boro_cd ?? p.borocd ?? p.BOROCD ?? feature.id;
+    const num = parseInt(raw, 10);
+    return isNaN(num) ? "" : String(num);
+}
 
-    d3.select("h3").text(`Showing: ${selectedMonth}`);
+function updateMap(selectedMonth, trashType) {
+    console.log("trash type:", trashType);
+    const monthRates = ratesByMonth.get(selectedMonth) || new Map();
+    // console.log(monthRates);
+
+    d3.select("#monthLabel").text("2026");
+    d3.select("h3").text(`Date: ${selectedMonth}`);
 
     svg.selectAll("path")
         .attr("class", function(d) {
-            const props = d.properties || {};
-            const cd = String(props.BoroCD ?? props.boro_cd ?? props.borocd ?? "").trim();
-            const val = monthRates.get(cd);
-
-            const colorClass = (val === undefined || isNaN(val)) ? "q-none" : quantize(val);
-            return "feature " + colorClass;
+            const cd = getGeoJsonBoroCd(d);
+            const rates = monthRates.get(cd);
+            // console.log("trash rates", rates[0]);
+            // var val = 0;
+            if (trashType === "trash") {
+                const val = rates? rates[0] : NaN;
+                const colorClass = (val === undefined || isNaN(val)) ? "q-none" : (val < 0.5 ? "trash-q-50" : trash_quantize(val));
+                return "feature " + colorClass;
+            }
+            else if (trashType === "recycle") {
+                const val = rates? rates[1] : NaN;
+                const colorClass = (val === undefined || isNaN(val)) ? "q-none" : (val > 0.5 ? "recycle-q-50" : recycle_quantize(val));
+                return "feature " + colorClass;
+            }
+            else if (trashType === "compost") {
+                const val = rates? rates[2] : NaN;
+                const colorClass = (val === undefined || isNaN(val)) ? "q-none" : (val > 0.2 ? "compost-q-50" : compost_quantize(val));
+                return "feature " + colorClass;
+            }
+            // const colorClass = (val === undefined || isNaN(val)) ? "q-none" : quantize(val);
+            // return "feature " + colorClass;
         });
 }
+
+function updateLegend(trashType) {
+    const config = {
+        trash: {
+            scale: trash_quantize,
+            categories: [
+                { label: "None", class: "q-none" },
+                { label: "<50%", class: "trash-q-50" },
+                { label: "50-55%", val: 0.5 },
+                { label: "55-60%", val: 0.55 },
+                { label: "60-65%", val: 0.6 },
+                { label: "65-70%", val: 0.65 },
+                { label: "70-75%", val: 0.7 },
+                { label: "75-80%", val: 0.75 },
+                { label: "80-85%", val: 0.8 },
+                { label: "85-90%", val: 0.85 },
+                { label: "90-95%", val: 0.9 },
+                { label: "95-100%", val: 0.95 }
+            ]
+        },
+        recycle: {
+            scale: recycle_quantize,
+            categories: [
+                { label: "None", class: "q-none" },
+                { label: "0-5%", val: 0 },
+                { label: "5-10%", val: 0.05 },
+                { label: "10-15%", val: 0.1 },
+                { label: "15-20%", val: 0.15 },
+                { label: "20-25%", val: 0.2 },
+                { label: "25-30%", val: 0.25 },
+                { label: "30-35%", val: 0.3 },
+                { label: "35-40%", val: 0.35 },
+                { label: "40-45%", val: 0.4 },
+                { label: "45-50%", val: 0.45 },
+                { label: ">50%", class: "recycle-q-50" }
+            ]
+        },
+        compost: {
+            scale: compost_quantize,
+            categories: [
+                { label: "None", class: "q-none" },
+                { label: "0-2%", val: 0 },
+                { label: "2-4%", val: 0.02 },
+                { label: "4-6%", val: 0.04 },
+                { label: "6-8%", val: 0.06 },
+                { label: "8-10%", val: 0.08 },
+                { label: "10-12%", val: 0.1 },
+                { label: "12-14%", val: 0.12 },
+                { label: "14-16%", val: 0.14 },
+                { label: "16-18%", val: 0.16 },
+                { label: "18-20%", val: 0.18 },
+                { label: ">20%", class: "compost-q-50" }
+            ]
+        }
+    };
+
+    const { scale, categories } = config[trashType];
+
+    // .join() handles enter, update, and exit in one step
+    const legendItems = svg.selectAll(".legend-item")
+        .data(categories)
+        .join(enter => {
+            const g = enter.append("g")
+                .attr("class", "legend-item")
+                .attr("transform", (d, i) => `translate(20, ${20 + i * 20})`);
+
+            g.append("rect")
+                .attr("width", 15)
+                .attr("height", 15);
+
+            g.append("text")
+                .attr("x", 20)
+                .attr("y", 12)
+                .style("font-size", "14px")
+                .attr("alignment-baseline", "middle");
+
+            return g;
+        });
+
+    // Update rect colors and text labels on both initial load and dropdown change
+    legendItems.select("rect")
+        .attr("class", d => d.class || scale(d.val));
+
+    legendItems.select("text")
+        .text(d => d.label);
+}
+
+
 </script>
 </body>
 </html>
